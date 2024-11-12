@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Chat Room with Private Messaging</title>
+    <style>
+        /* General Reset */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f4f8; }
+        
+        /* Container and Layout */
+        .container { display: flex; width: 90%; max-width: 1000px; height: 90vh; background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.2); }
+        .member-list { width: 25%; background-color: #2c3e50; color: #ecf0f1; padding: 10px; overflow-y: auto; }
+        .chat-section { width: 75%; display: flex; flex-direction: column; }
+        
+        /* Member List */
+        .member-list h3 { text-align: center; margin-bottom: 10px; }
+        .member { padding: 8px; border-radius: 5px; margin-bottom: 5px; display: flex; align-items: center; cursor: pointer; }
+        .member:hover { background-color: #34495e; }
+        .member .online-dot { width: 8px; height: 8px; background-color: #2ecc71; border-radius: 50%; margin-right: 8px; }
+        
+        /* Chat Box */
+        #chatContainer { flex-grow: 1; padding: 15px; overflow-y: auto; background-color: #ecf0f1; }
+        .message { margin-bottom: 10px; padding: 8px; border-radius: 8px; background-color: #e7f5ff; position: relative; }
+        .message strong { display: block; color: #2980b9; }
+        .edit-button { color: blue; cursor: pointer; font-size: 12px; position: absolute; top: 5px; right: 10px; }
+        
+        /* Reply Area */
+        .send-container { display: flex; align-items: center; padding: 10px; border-top: 1px solid #ddd; background-color: #ffffff; }
+        .send-container input[type="text"] { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #ddd; }
+        .send-container button { background-color: #2980b9; color: white; padding: 10px 15px; border-radius: 5px; margin-left: 10px; cursor: pointer; }
+        
+        /* Modal Styling */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); align-items: center; justify-content: center; }
+        .modal-content { background-color: #fff; padding: 20px; border-radius: 10px; width: 300px; text-align: center; }
+        
+        /* Lock Icon */
+        .lock-icon { cursor: pointer; font-size: 20px; color: #e74c3c; position: absolute; bottom: 10px; right: 10px; }
+        .lock-icon.locked { color: #3498db; }
+    </style>
+</head>
+<body>
+    <!-- Sign-Up/Sign-In Modal -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <h3>Sign Up / Login</h3>
+            <div id="authChoice">
+                <button onclick="showSignUpForm()">Sign Up</button>
+                <button onclick="showSignInForm()">Sign In</button>
+            </div>
+            <div id="authForm" style="display:none;">
+                <input type="text" id="authUsername" placeholder="Username" style="margin-bottom: 10px; width: 100%;" />
+                <input type="password" id="authPassword" placeholder="Password" style="margin-bottom: 10px; width: 100%;" />
+                <button onclick="authenticateUser()">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Chat Container -->
+    <div class="container">
+        <!-- Member List -->
+        <div class="member-list">
+            <h3>Members</h3>
+            <div id="memberList"></div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+            <h2 style="text-align: center; padding: 10px; background-color: #3498db; color: white;">Enhanced Chat Room</h2>
+            <div id="chatContainer"></div>
+            <div class="send-container">
+                <input type="text" id="messageInput" placeholder="Type a message">
+                <input type="file" id="fileInput" accept="image/*,video/*,.pdf,.doc,.docx" onchange="handleFile()" style="display: none;">
+                <button onclick="document.getElementById('fileInput').click()">📎</button>
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let users = JSON.parse(localStorage.getItem("users")) || {};
+        let currentUser = null;
+        let messages = [];
+        let uploadedFile = null;
+        let privateMessages = {};
+
+        // Show sign-up or sign-in option
+        function showSignUpForm() {
+            document.getElementById("authChoice").style.display = "none";
+            document.getElementById("authForm").style.display = "block";
+        }
+
+        function showSignInForm() {
+            document.getElementById("authChoice").style.display = "none";
+            document.getElementById("authForm").style.display = "block";
+        }
+
+        window.onload = function() {
+            if (!currentUser) document.getElementById("authModal").style.display = "flex";
+            updateMemberList();
+        }
+
+        function authenticateUser() {
+            const username = document.getElementById("authUsername").value;
+            const password = document.getElementById("authPassword").value;
+
+            if (username && password) {
+                if (!users[username]) {
+                    users[username] = { username, password };
+                    localStorage.setItem("users", JSON.stringify(users));
+                } else if (users[username].password !== password) {
+                    alert("Incorrect password.");
+                    return;
+                }
+                currentUser = username;
+                document.getElementById("authModal").style.display = "none";
+                updateMemberList();
+            } else {
+                alert("Please enter both username and password.");
+            }
+        }
+
+        // Update Member List
+        function updateMemberList() {
+            const memberListDiv = document.getElementById("memberList");
+            memberListDiv.innerHTML = '';
+            Object.keys(users).forEach(user => {
+                const memberDiv = document.createElement("div");
+                memberDiv.className = "member";
+                memberDiv.onclick = () => openPrivateChat(user);
+                memberDiv.innerHTML = `<span class="online-dot"></span>${user}`;
+                memberListDiv.appendChild(memberDiv);
+            });
+        }
+
+        function handleFile() {
+            uploadedFile = document.getElementById('fileInput').files[0];
+        }
+
+        function sendMessage() {
+            const messageText = document.getElementById("messageInput").value;
+
+            if (messageText || uploadedFile) {
+                const message = {
+                    sender: currentUser,
+                    text: messageText,
+                    file: uploadedFile ? { name: uploadedFile.name, type: uploadedFile.type, url: URL.createObjectURL(uploadedFile), downloadable: true } : null,
+                    timestamp: new Date(),
+                    edited: false,
+                    locked: false
+                };
+                messages.push(message);
+                displayMessages();
+                document.getElementById("messageInput").value = '';
+                uploadedFile = null;
+            }
+        }
+
+        function displayMessages() {
+            const chatContainer = document.getElementById("chatContainer");
+            chatContainer.innerHTML = '';
+            messages.forEach((message, index) => {
+                const messageDiv = document.createElement("div");
+                messageDiv.className = "message";
+                messageDiv.innerHTML = `
+                    <strong>${message.sender}</strong>: ${message.text} 
+                    ${message.file ? `<a href="${message.file.url}" ${message.file.downloadable ? 'download' : ''}>${message.file.name}</a>` : ''}
+                    <span style="font-size: 12px; color: gray;">${message.timestamp.toLocaleTimeString()}</span>
+                    <span class="lock-icon ${message.locked ? 'locked' : ''}" onclick="toggleLock(${index})">${message.locked ? '🔒' : '🔓'}</span>
+                `;
+                chatContainer.appendChild(messageDiv);
+            });
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function toggleLock(index) {
+            messages[index].locked = !messages[index].locked;
+            displayMessages();
+        }
+
+        function openPrivateChat(receiver) {
+            if (receiver === currentUser) return;
+
+            const privateChatWindow = window.open("", "_blank", "width=400,height=600");
+            privateChatWindow.document.write(`
+                <h3>Private Chat with ${receiver}</h3>
+                <div id="privateChatContainer"></div>
+                <input type="text" id="privateMessageInput" placeholder="Type a private message">
+                <input type="file" id="privateFileInput" accept="image/*,video/*,.pdf,.doc,.docx" onchange="handlePrivateFile()" style="display: none;">
+                <button onclick="document.getElementById('privateFileInput').click()">📎</button>
+                <button onclick="sendPrivateMessage('${receiver}')">Send</button>
+                <button onclick="startVideoCall('${receiver}')">Video Call</button>
+                <button onclick="startVoiceNote('${receiver}')">Voice Note</button>
+            `);
+            privateChatWindow.document.close();
+        }
+
+        function startVoiceNote(receiver) {
+            alert(`Recording voice note for private chat with ${receiver} (Functionality to be implemented)`);
+        }
+
+        function startVideoCall(receiver) {
+            alert(`Starting video call with ${receiver} (Functionality to be implemented)`);
+        }
+
+        function sendPrivateMessage(receiver) {
+            const privateMessageText = document.getElementById("privateMessageInput").value;
+            const privateFile = document.getElementById('privateFileInput').files[0];
+            const privateMessage = {
+                sender: currentUser,
+                text: privateMessageText,
+                file: privateFile ? { name: privateFile.name, type: privateFile.type, url: URL.createObjectURL(privateFile), downloadable: true } : null,
+                timestamp: new Date(),
+            };
+
+            // Update the private chat window with the new message
+            const privateChatContainer = window.document.getElementById("privateChatContainer");
+            privateChatContainer.innerHTML += `
+                <p><strong>${privateMessage.sender}</strong>: ${privateMessage.text} 
+                ${privateMessage.file ? `<a href="${privateMessage.file.url}" download="${privateMessage.file.name}">Download</a>` : ''} 
+                <span style="font-size: 12px; color: gray;">${privateMessage.timestamp.toLocaleTimeString()}</span></p>
+            `;
+            window.document.getElementById("privateMessageInput").value = '';
+        }
+    </script>
+</body>
+</html>
